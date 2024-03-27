@@ -2,14 +2,13 @@ from adafruit_bus_device.spi_device import SPIDevice
 from digitalio import DigitalInOut, Direction
 import board
 import busio
-from enum import Enum, auto
 from time import sleep
+
 
 class ESPAT:
 
-    class Mode(Enum):
-        STATION_MODE = auto()
-        SOFT_AP_MODE = auto()
+    STATION_MODE = 1
+    SOFT_AP_MODE = 2
 
     def _init_pin(self, board_pin, direction=Direction.OUTPUT, initial_value=False):
         pin = DigitalInOut(board_pin)
@@ -19,7 +18,7 @@ class ESPAT:
 
         return pin
 
-    def __init__(self, mode=Mode.STATION_MODE):
+    def __init__(self, mode=STATION_MODE):
 
         self.mode = mode
 
@@ -37,6 +36,9 @@ class ESPAT:
 
         self.cs = DigitalInOut(board.ESP_CS)
         self.cs.direction = Direction.OUTPUT
+
+        self.spi_bus = busio.SPI(board.ESP_CLK, MISO=board.ESP_MISO, MOSI=board.ESP_MOSI)
+        self.spi_device = SPIDevice(self.spi_bus, self.cs, baudrate=200000)
 
     def activate(self, mode):
 
@@ -61,8 +63,7 @@ class ESPAT:
         self.wifi_handshake.switch_to_input()
         self.cs.value = True
 
-        self.spi_bus = busio.SPI(board.HSPI_CLK, MISO=board.HSPI_MISO, MOSI=board.HSPI_MOSI)
-        self.spi_device = SPIDevice(self.spi_bus, self.cs, baudrate=200000)
+        print("power on sequence complete")
 
     def _wifi_init(self):
         # https://github.com/IsQianGe/rp2040-spi/blob/master/ports/rp2/wifi_spi.c#L1339
@@ -71,22 +72,25 @@ class ESPAT:
     def power_off(self):
         raise NotImplementedError()
 
-    class SPICommand(Enum):
-        MASTER_WRITE_DATA_TO_SLAVE = 2
-        MASTER_READ_DATA_FROM_SLAVE = 3
-        MASTER_WRITE_STATUS_TO_SLAVE = 1
-        MASTER_READ_STATUS_FROM_SLAVE = 4
+
+    # MASTER_WRITE_DATA_TO_SLAVE = 2
+    # MASTER_READ_DATA_FROM_SLAVE = 3
+    # MASTER_WRITE_STATUS_TO_SLAVE = 1
+    # MASTER_READ_STATUS_FROM_SLAVE = 4
 
     master_requests_send_to_slave = bytearray(b'\x01\x00\x00\xFE\x01\x04\x00')
     master_read_status_status_from_slave = bytearray(b'\x02\x04\x00\x00\x00\x00\x00')
 
     def send_at_command(self):
 
+        assert(not self.wifi_handshake.value)
+
         # step 1 Master requests to send data
         with self.spi_device as spi:
             spi.write(self.master_requests_send_to_slave)
 
         # ESP pulls up handshake pin
+        print("wait for handshake")
         while not self.wifi_handshake.value:
             pass
 
